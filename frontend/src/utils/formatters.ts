@@ -10,3 +10,14 @@ export const timeAgo = (ts: number) => {
   return `${Math.round(s / 3600)} h ago`;
 };
 export const uptime = (n: number) => `${n.toFixed(2)}%`;
+
+export const memSize = (mb: number) =>
+  mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+
+export const when = (ts: number) =>
+  new Date(ts).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });

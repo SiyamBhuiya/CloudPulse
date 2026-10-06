@@ -17,6 +17,13 @@ const delay = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 300));
 export const serverService = {
   list: (): Promise<Server[]> =>
     MOCK ? delay([...mockServers]) : api<Server[]>("/api/servers"),
+    get: (id: string): Promise<Server> => {
+    if (MOCK) {
+      const s = mockServers.find((x) => x.id === id);
+      return s ? delay(s) : Promise.reject(new Error("not found"));
+    }
+    return api<Server>(`/api/servers/${id}`);
+  },
 
   create: (payload: CreateServerPayload): Promise<CreateServerResponse> => {
     if (MOCK) {
