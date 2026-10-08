@@ -1,2 +1,2 @@
 # CloudPulse
-CloudPulse — Distributed Cloud Monitoring Platform
+CloudPulse —  Distributed Cloud Monitoring Platform
