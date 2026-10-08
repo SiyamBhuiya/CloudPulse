@@ -48,12 +48,6 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           api.NewRouter(cfg, auth),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
 	go func() {
 		slog.Info("api listening", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
