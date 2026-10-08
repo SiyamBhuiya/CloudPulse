@@ -40,6 +40,13 @@ func main() {
 
 	users := repository.NewUserRepo(pool)
 	auth := service.NewAuthService(users, cfg.JWTSecret, cfg.JWTTTL)
+	servers := service.NewServerService(repository.NewServerRepo(pool))
+
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           api.NewRouter(cfg, auth, servers),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
