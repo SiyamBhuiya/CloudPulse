@@ -3,70 +3,69 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
-
-	"cloudpulse/internal/api"
-	"cloudpulse/internal/config"
-	"cloudpulse/internal/db"
-	"cloudpulse/internal/repository"
-	"cloudpulse/internal/service"
+	"cloudpulse/agent"
+	"cloudpulse/agent/collector"
 	"cloudpulse/pkg/logger"
 )
 
 func main() {
 	logger.Setup()
-	_ = godotenv.Load() // reads backend/.env if it exists
 
-	cfg, err := config.Load()
-	if err != nil {
-		fatal("config", err)
+	key := flag.String("key", os.Getenv("CLOUDPULSE_KEY"), "agent key from the Add server dialog")
+	apiURL := flag.String("api", env("CLOUDPULSE_API", "http://localhost:8080"), "CloudPulse API address")
+	interval := flag.Duration("interval", time.Second, "how often to report")
+	flag.Parse()
+
+	if *key == "" {
+		slog.Error("missing agent key", "usage", "agent -key cp_live_... [-api http://host:8080]")
+		os.Exit(1)
 	}
 
-	if err := db.Migrate(cfg.DatabaseURL); err != nil {
-		fatal("migrate", err)
-	}
-	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
-	if err != nil {
-		fatal("database", err)
-	}
-	defer pool.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	users := repository.NewUserRepo(pool)
-	auth := service.NewAuthService(users, cfg.JWTSecret, cfg.JWTTTL)
-	servers := service.NewServerService(repository.NewServerRepo(pool))
+	c := collector.New()
+	sender := agent.NewSender(*apiURL, *key)
+	slog.Info("agent started", "api", *apiURL, "interval", interval.String())
 
-	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           api.NewRouter(cfg, auth, servers),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	ticker := time.NewTicker(*interval)
+	defer ticker.Stop()
 
-	go func() {
-		slog.Info("api listening", "addr", srv.Addr)
-		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			fatal("server", err)
+	failing := false // so a long outage logs once, not every second
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("agent stopped")
+			return
+		case <-ticker.C:
+			err := sender.Send(ctx, c.Collect())
+			switch {
+			case err == nil:
+				if failing {
+					slog.Info("reconnected")
+					failing = false
+				}
+			case errors.Is(err, agent.ErrUnauthorized):
+				slog.Error("agent key is wrong or the server was deleted")
+				os.Exit(1)
+			case !failing && ctx.Err() == nil:
+				slog.Warn("cannot reach the API, will keep trying", "err", err)
+				failing = true
+			}
 		}
-	}()
-
-	// Wait for Ctrl+C, then let in-flight requests finish
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(ctx)
-	slog.Info("stopped")
+	}
 }
 
-func fatal(what string, err error) {
-	slog.Error("startup failed", "step", what, "err", err)
-	os.Exit(1)
+func env(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

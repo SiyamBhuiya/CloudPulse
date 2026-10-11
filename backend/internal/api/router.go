@@ -8,16 +8,23 @@ import (
 
 	"cloudpulse/internal/api/handlers"
 	"cloudpulse/internal/api/middleware"
+	"cloudpulse/internal/collector"
 	"cloudpulse/internal/config"
 	"cloudpulse/internal/service"
 )
 
-func NewRouter(cfg *config.Config, auth *service.AuthService, servers *service.ServerService) http.Handler {
+func NewRouter(
+	cfg *config.Config,
+	auth *service.AuthService,
+	servers *service.ServerService,
+	col *collector.Collector,
+) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer, middleware.Logging, middleware.CORS(cfg.AllowedOrigin))
 
 	authHandler := handlers.NewAuthHandler(auth)
 	serverHandler := handlers.NewServerHandler(servers)
+	ingestHandler := handlers.NewIngestHandler(servers, col)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -29,7 +36,10 @@ func NewRouter(cfg *config.Config, auth *service.AuthService, servers *service.S
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
 
-		// Needs a valid token
+		// Agents send metrics here, using their agent key instead of a user token
+		r.Post("/agent/metrics", ingestHandler.Ingest)
+
+		// Needs a valid user token
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(auth.ParseToken))
 
