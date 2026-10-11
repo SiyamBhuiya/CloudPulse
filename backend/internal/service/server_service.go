@@ -38,7 +38,7 @@ func newAgentKey() (string, error) {
 }
 
 // decorate fills in the fields the dashboard shows.
-// CPU, memory and uptime stay at placeholder values until agents report real metrics.
+// Uptime stays a placeholder until health checks exist.
 func decorate(s *models.Server) {
 	seen := s.CreatedAt
 	if s.LastSeenAt != nil {
@@ -46,10 +46,13 @@ func decorate(s *models.Server) {
 	}
 	s.LastSeen = seen.UnixMilli()
 
-	if s.LastSeenAt != nil && time.Since(*s.LastSeenAt) < onlineWindow {
-		s.Status = "online"
-	} else {
+	switch {
+	case s.LastSeenAt == nil || time.Since(*s.LastSeenAt) >= onlineWindow:
 		s.Status = "down"
+	case s.CPU >= 90 || s.Memory >= 90:
+		s.Status = "warning"
+	default:
+		s.Status = "online"
 	}
 	s.Uptime = 100
 }
@@ -91,4 +94,9 @@ func (s *ServerService) Get(ctx context.Context, userID, id string) (*models.Ser
 
 func (s *ServerService) Delete(ctx context.Context, userID, id string) error {
 	return s.servers.Delete(ctx, userID, id)
+}
+
+// AuthenticateAgent turns the key an agent sends into a server id.
+func (s *ServerService) AuthenticateAgent(ctx context.Context, key string) (string, error) {
+	return s.servers.IDByKeyHash(ctx, HashAgentKey(key))
 }
