@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -17,6 +20,10 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("load .env: %w", err)
+	}
+
 	c := &Config{
 		Port:          get("PORT", "8080"),
 		DatabaseURL:   get("DATABASE_URL", "postgres://cloudpulse:cloudpulse@localhost:5432/cloudpulse?sslmode=disable"),
