@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloudpulse/internal/collector"
+	"cloudpulse/internal/hub"
 	"cloudpulse/internal/models"
 	"cloudpulse/internal/repository"
 	"cloudpulse/internal/service"
@@ -16,10 +17,11 @@ import (
 type IngestHandler struct {
 	servers *service.ServerService
 	col     *collector.Collector
+	hub     *hub.Hub
 }
 
-func NewIngestHandler(servers *service.ServerService, col *collector.Collector) *IngestHandler {
-	return &IngestHandler{servers: servers, col: col}
+func NewIngestHandler(servers *service.ServerService, col *collector.Collector, h *hub.Hub) *IngestHandler {
+	return &IngestHandler{servers: servers, col: col, hub: h}
 }
 
 type ingestRequest struct {
@@ -62,18 +64,19 @@ func (h *IngestHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok := h.col.Submit(models.Sample{
+	sample := models.Sample{
 		ServerID: serverID,
 		At:       time.Now(),
 		CPU:      req.CPU,
 		Memory:   req.Memory,
 		Disk:     req.Disk,
 		Network:  req.Network,
-	})
-	if !ok {
+	}
+	if !h.col.Submit(sample) {
 		w.Header().Set("Retry-After", "2")
 		writeError(w, http.StatusServiceUnavailable, "busy, try again")
 		return
 	}
+	h.hub.Publish(sample) // live view, without waiting for the database
 	w.WriteHeader(http.StatusNoContent)
 }

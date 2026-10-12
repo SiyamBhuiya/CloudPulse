@@ -10,6 +10,7 @@ import (
 	"cloudpulse/internal/api/middleware"
 	"cloudpulse/internal/collector"
 	"cloudpulse/internal/config"
+	"cloudpulse/internal/hub"
 	"cloudpulse/internal/service"
 )
 
@@ -18,13 +19,18 @@ func NewRouter(
 	auth *service.AuthService,
 	servers *service.ServerService,
 	col *collector.Collector,
+	hb *hub.Hub,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer, middleware.Logging, middleware.CORS(cfg.AllowedOrigin))
 
 	authHandler := handlers.NewAuthHandler(auth)
 	serverHandler := handlers.NewServerHandler(servers)
-	ingestHandler := handlers.NewIngestHandler(servers, col)
+	ingestHandler := handlers.NewIngestHandler(servers, col, hb)
+	wsHandler := handlers.NewWSHandler(auth, servers, hb, cfg.AllowedOrigin)
+
+	// Live stream for the browser. It checks the token itself (from ?token=).
+	r.Get("/ws", wsHandler.Serve)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
