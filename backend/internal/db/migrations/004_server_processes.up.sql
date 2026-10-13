@@ -1,0 +1,1 @@
+ALTER TABLE servers ADD COLUMN processes JSONB NOT NULL DEFAULT '[]';

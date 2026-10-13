@@ -18,6 +18,7 @@ func NewRouter(
 	cfg *config.Config,
 	auth *service.AuthService,
 	servers *service.ServerService,
+	metrics *service.MetricService,
 	col *collector.Collector,
 	hb *hub.Hub,
 ) http.Handler {
@@ -26,6 +27,7 @@ func NewRouter(
 
 	authHandler := handlers.NewAuthHandler(auth)
 	serverHandler := handlers.NewServerHandler(servers)
+	metricHandler := handlers.NewMetricHandler(metrics)
 	ingestHandler := handlers.NewIngestHandler(servers, col, hb)
 	wsHandler := handlers.NewWSHandler(auth, servers, hb, cfg.AllowedOrigin)
 
@@ -58,6 +60,10 @@ func NewRouter(
 			r.Post("/servers", serverHandler.Create)
 			r.Get("/servers/{id}", serverHandler.Get)
 			r.Delete("/servers/{id}", serverHandler.Delete)
+
+			r.Get("/servers/{id}/metrics", metricHandler.History)
+			r.Get("/servers/{id}/processes", metricHandler.Processes)
+			r.Get("/servers/{id}/events", metricHandler.Events)
 		})
 	})
 

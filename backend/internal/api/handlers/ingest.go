@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"cloudpulse/internal/collector"
@@ -25,14 +26,38 @@ func NewIngestHandler(servers *service.ServerService, col *collector.Collector, 
 }
 
 type ingestRequest struct {
-	CPU     float64 `json:"cpu"`
-	Memory  float64 `json:"memory"`
-	Disk    float64 `json:"disk"`
-	Network float64 `json:"network"`
+	CPU       float64              `json:"cpu"`
+	Memory    float64              `json:"memory"`
+	Disk      float64              `json:"disk"`
+	Network   float64              `json:"network"`
+	Processes []models.ProcessInfo `json:"processes"`
 }
 
 func validPercent(v float64) bool {
 	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= 100
+}
+
+func validNumber(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0
+}
+
+// cleanProcesses keeps at most 20 sensible entries, with short names.
+func cleanProcesses(in []models.ProcessInfo) []models.ProcessInfo {
+	out := make([]models.ProcessInfo, 0, len(in))
+	for _, p := range in {
+		name := strings.TrimSpace(p.Name)
+		if name == "" || !validNumber(p.CPU) || !validNumber(p.MemoryMB) {
+			continue
+		}
+		if r := []rune(name); len(r) > 80 {
+			name = string(r[:80])
+		}
+		out = append(out, models.ProcessInfo{Name: name, CPU: math.Min(p.CPU, 100), MemoryMB: p.MemoryMB})
+		if len(out) == 20 {
+			break
+		}
+	}
+	return out
 }
 
 // Ingest receives one sample from an agent. Agents log in with their key
@@ -58,19 +83,19 @@ func (h *IngestHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if !validPercent(req.CPU) || !validPercent(req.Memory) || !validPercent(req.Disk) ||
-		math.IsNaN(req.Network) || math.IsInf(req.Network, 0) || req.Network < 0 {
+	if !validPercent(req.CPU) || !validPercent(req.Memory) || !validPercent(req.Disk) || !validNumber(req.Network) {
 		writeError(w, http.StatusBadRequest, "metric values out of range")
 		return
 	}
 
 	sample := models.Sample{
-		ServerID: serverID,
-		At:       time.Now(),
-		CPU:      req.CPU,
-		Memory:   req.Memory,
-		Disk:     req.Disk,
-		Network:  req.Network,
+		ServerID:  serverID,
+		At:        time.Now(),
+		CPU:       req.CPU,
+		Memory:    req.Memory,
+		Disk:      req.Disk,
+		Network:   req.Network,
+		Processes: cleanProcesses(req.Processes),
 	}
 	if !h.col.Submit(sample) {
 		w.Header().Set("Retry-After", "2")

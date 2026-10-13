@@ -40,13 +40,17 @@ func main() {
 	}
 	defer pool.Close()
 
-	users := repository.NewUserRepo(pool)
-	auth := service.NewAuthService(users, cfg.JWTSecret, cfg.JWTTTL)
-	servers := service.NewServerService(repository.NewServerRepo(pool))
+	userRepo := repository.NewUserRepo(pool)
+	serverRepo := repository.NewServerRepo(pool)
+	metricRepo := repository.NewMetricRepo(pool)
+
+	auth := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
+	servers := service.NewServerService(serverRepo)
+	metrics := service.NewMetricService(serverRepo, metricRepo)
 
 	// 1024 samples can wait in the buffer; 4 goroutines write them to Postgres
 	workCtx, stopWork := context.WithCancel(context.Background())
-	col := collector.New(repository.NewMetricRepo(pool), 1024, 4)
+	col := collector.New(metricRepo, 1024, 4)
 	col.Start(workCtx)
 
 	// Pushes live metrics to browsers over WebSocket
@@ -54,7 +58,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewRouter(cfg, auth, servers, col, hb),
+		Handler:           api.NewRouter(cfg, auth, servers, metrics, col, hb),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
