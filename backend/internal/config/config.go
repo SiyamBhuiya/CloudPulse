@@ -1,13 +1,10 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -17,20 +14,21 @@ type Config struct {
 	JWTSecret     string
 	JWTTTL        time.Duration
 	AllowedOrigin string
+
+	// Lets health checks target localhost and private networks.
+	// For local testing only. Keep it off on a real server.
+	AllowPrivateTargets bool
 }
 
 func Load() (*Config, error) {
-	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("load .env: %w", err)
-	}
-
 	c := &Config{
-		Port:          get("PORT", "8080"),
-		DatabaseURL:   get("DATABASE_URL", "postgres://cloudpulse:cloudpulse@localhost:5432/cloudpulse?sslmode=disable"),
-		RedisURL:      get("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:     os.Getenv("JWT_SECRET"),
-		JWTTTL:        24 * time.Hour,
-		AllowedOrigin: get("ALLOWED_ORIGIN", "http://localhost:5173"),
+		Port:                get("PORT", "8080"),
+		DatabaseURL:         get("DATABASE_URL", "postgres://cloudpulse:cloudpulse@localhost:5433/cloudpulse?sslmode=disable"),
+		RedisURL:            get("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:           os.Getenv("JWT_SECRET"),
+		JWTTTL:              24 * time.Hour,
+		AllowedOrigin:       get("ALLOWED_ORIGIN", "http://localhost:5173"),
+		AllowPrivateTargets: get("ALLOW_PRIVATE_TARGETS", "false") == "true",
 	}
 	if len(c.JWTSecret) < 32 {
 		return nil, fmt.Errorf("JWT_SECRET must be set and at least 32 characters long")
