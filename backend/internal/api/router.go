@@ -19,6 +19,7 @@ func NewRouter(
 	auth *service.AuthService,
 	servers *service.ServerService,
 	metrics *service.MetricService,
+	health *service.HealthService,
 	col *collector.Collector,
 	hb *hub.Hub,
 ) http.Handler {
@@ -28,6 +29,7 @@ func NewRouter(
 	authHandler := handlers.NewAuthHandler(auth)
 	serverHandler := handlers.NewServerHandler(servers)
 	metricHandler := handlers.NewMetricHandler(metrics)
+	healthHandler := handlers.NewHealthHandler(health)
 	ingestHandler := handlers.NewIngestHandler(servers, col, hb)
 	wsHandler := handlers.NewWSHandler(auth, servers, hb, cfg.AllowedOrigin)
 
@@ -64,6 +66,11 @@ func NewRouter(
 			r.Get("/servers/{id}/metrics", metricHandler.History)
 			r.Get("/servers/{id}/processes", metricHandler.Processes)
 			r.Get("/servers/{id}/events", metricHandler.Events)
+
+			r.Get("/health-checks", healthHandler.List)
+			r.Post("/health-checks", healthHandler.Create)
+			r.Patch("/health-checks/{id}", healthHandler.SetEnabled)
+			r.Delete("/health-checks/{id}", healthHandler.Delete)
 		})
 	})
 

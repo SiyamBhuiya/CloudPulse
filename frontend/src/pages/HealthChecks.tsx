@@ -8,6 +8,7 @@ import { timeAgo } from "../utils/formatters";
 import type { CheckStatus, DayStatus, HealthCheck, HealthCheckInput } from "../types/healthcheck";
 
 const badge: Record<CheckStatus, { label: string; dot: string }> = {
+  pending: { label: "Checking...", dot: "bg-muted" },
   up: { label: "Up", dot: "bg-ok" },
   slow: { label: "Slow", dot: "bg-cpu" },
   down: { label: "Down", dot: "bg-bad" },
@@ -17,6 +18,7 @@ const dayColor: Record<DayStatus, string> = {
   ok: "bg-ok",
   degraded: "bg-cpu",
   down: "bg-bad",
+  none: "bg-line",
 };
 
 const intervalLabel = (s: number) => (s < 60 ? `${s} sec` : `${s / 60} min`);
@@ -126,11 +128,24 @@ export default function HealthChecks() {
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
-    healthService
-      .list()
-      .then(setChecks)
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+    let active = true;
+    const load = () =>
+      healthService
+        .list()
+        .then((c) => {
+          if (!active) return;
+          setChecks(c);
+          setError(false);
+        })
+        .catch(() => active && setError(true))
+        .finally(() => active && setLoading(false));
+
+    load();
+    const id = window.setInterval(load, 10000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
   }, []);
 
   async function add(input: HealthCheckInput) {
@@ -156,7 +171,7 @@ export default function HealthChecks() {
 
   // Summary numbers (paused checks are left out)
   const active = checks.filter((c) => c.enabled);
-  const up = active.filter((c) => c.status !== "down").length;
+  const up = active.filter((c) => c.status === "up" || c.status === "slow").length;
   const timed = active.filter((c) => c.responseMs !== null);
   const avgMs = timed.length
     ? Math.round(timed.reduce((sum, c) => sum + (c.responseMs ?? 0), 0) / timed.length)

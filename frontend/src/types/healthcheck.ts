@@ -1,5 +1,5 @@
-export type CheckStatus = "up" | "slow" | "down";
-export type DayStatus = "ok" | "degraded" | "down";
+export type CheckStatus = "pending" | "up" | "slow" | "down";
+export type DayStatus = "ok" | "degraded" | "down" | "none";
 
 export interface HealthCheck {
   id: string;

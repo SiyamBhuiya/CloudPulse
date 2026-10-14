@@ -16,6 +16,7 @@ import (
 	"cloudpulse/internal/collector"
 	"cloudpulse/internal/config"
 	"cloudpulse/internal/db"
+	"cloudpulse/internal/healthcheck"
 	"cloudpulse/internal/hub"
 	"cloudpulse/internal/repository"
 	"cloudpulse/internal/service"
@@ -43,22 +44,38 @@ func main() {
 	userRepo := repository.NewUserRepo(pool)
 	serverRepo := repository.NewServerRepo(pool)
 	metricRepo := repository.NewMetricRepo(pool)
+	healthRepo := repository.NewHealthRepo(pool)
 
 	auth := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTTTL)
 	servers := service.NewServerService(serverRepo)
 	metrics := service.NewMetricService(serverRepo, metricRepo)
+	health := service.NewHealthService(healthRepo, cfg.AllowPrivateTargets)
+
+	if cfg.AllowPrivateTargets {
+		slog.Warn("ALLOW_PRIVATE_TARGETS is on: health checks may reach localhost and private networks")
+	}
+
+	// Background workers all stop when workCtx is cancelled
+	workCtx, stopWork := context.WithCancel(context.Background())
 
 	// 1024 samples can wait in the buffer; 4 goroutines write them to Postgres
-	workCtx, stopWork := context.WithCancel(context.Background())
 	col := collector.New(metricRepo, 1024, 4)
 	col.Start(workCtx)
+
+	// Pings the URLs from the Health checks page
+	checker := healthcheck.New(healthRepo, cfg.AllowPrivateTargets)
+	checkerDone := make(chan struct{})
+	go func() {
+		checker.Run(workCtx)
+		close(checkerDone)
+	}()
 
 	// Pushes live metrics to browsers over WebSocket
 	hb := hub.New()
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewRouter(cfg, auth, servers, metrics, col, hb),
+		Handler:           api.NewRouter(cfg, auth, servers, metrics, health, col, hb),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -77,8 +94,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx) // no new requests
-	stopWork()            // then tell the writers to finish what is queued
+	stopWork()            // then tell the background workers to finish
 	col.Wait()
+	<-checkerDone
 	slog.Info("stopped")
 }
 
