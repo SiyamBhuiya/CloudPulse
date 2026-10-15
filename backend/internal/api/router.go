@@ -20,6 +20,7 @@ func NewRouter(
 	servers *service.ServerService,
 	metrics *service.MetricService,
 	health *service.HealthService,
+	alerts *service.AlertService,
 	col *collector.Collector,
 	hb *hub.Hub,
 ) http.Handler {
@@ -30,6 +31,7 @@ func NewRouter(
 	serverHandler := handlers.NewServerHandler(servers)
 	metricHandler := handlers.NewMetricHandler(metrics)
 	healthHandler := handlers.NewHealthHandler(health)
+	alertHandler := handlers.NewAlertHandler(alerts)
 	ingestHandler := handlers.NewIngestHandler(servers, col, hb)
 	wsHandler := handlers.NewWSHandler(auth, servers, hb, cfg.AllowedOrigin)
 
@@ -65,12 +67,18 @@ func NewRouter(
 
 			r.Get("/servers/{id}/metrics", metricHandler.History)
 			r.Get("/servers/{id}/processes", metricHandler.Processes)
-			r.Get("/servers/{id}/events", metricHandler.Events)
+			r.Get("/servers/{id}/events", alertHandler.ServerEvents)
 
 			r.Get("/health-checks", healthHandler.List)
 			r.Post("/health-checks", healthHandler.Create)
 			r.Patch("/health-checks/{id}", healthHandler.SetEnabled)
 			r.Delete("/health-checks/{id}", healthHandler.Delete)
+
+			r.Get("/alerts/rules", alertHandler.ListRules)
+			r.Post("/alerts/rules", alertHandler.CreateRule)
+			r.Put("/alerts/rules/{id}", alertHandler.UpdateRule)
+			r.Delete("/alerts/rules/{id}", alertHandler.DeleteRule)
+			r.Get("/alerts/history", alertHandler.History)
 		})
 	})
 
