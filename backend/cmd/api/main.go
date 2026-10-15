@@ -20,6 +20,7 @@ import (
 	"cloudpulse/internal/healthcheck"
 	"cloudpulse/internal/hub"
 	"cloudpulse/internal/repository"
+	"cloudpulse/internal/retention"
 	"cloudpulse/internal/service"
 	"cloudpulse/pkg/logger"
 )
@@ -81,17 +82,25 @@ func main() {
 		close(evaluatorDone)
 	}()
 
+	// Deletes metrics older than the retention period
+	cleaner := retention.New(metricRepo, cfg.MetricsRetentionDays)
+	cleanerDone := make(chan struct{})
+	go func() {
+		cleaner.Run(workCtx)
+		close(cleanerDone)
+	}()
+
 	// Pushes live metrics to browsers over WebSocket
 	hb := hub.New()
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewRouter(cfg, auth, servers, metrics, health, alerts, col, hb),
+		Handler:           api.NewRouter(workCtx, cfg, auth, servers, metrics, health, alerts, col, hb),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		slog.Info("api listening", "addr", srv.Addr)
+		slog.Info("api listening", "addr", srv.Addr, "retentionDays", cfg.MetricsRetentionDays)
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			fatal("server", err)
 		}
@@ -109,6 +118,7 @@ func main() {
 	col.Wait()
 	<-checkerDone
 	<-evaluatorDone
+	<-cleanerDone
 	slog.Info("stopped")
 }
 

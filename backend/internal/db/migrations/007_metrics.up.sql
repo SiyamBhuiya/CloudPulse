@@ -1,0 +1,1 @@
+CREATE INDEX metrics_ts_idx ON metrics (ts);

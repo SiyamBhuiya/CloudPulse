@@ -30,6 +30,8 @@ export default function Login() {
       setError(
         err instanceof ApiError && err.status === 401
           ? "Email or password is incorrect. Check both and try again."
+          : err instanceof ApiError && err.status === 429
+          ? "Too many attempts. Wait a minute and try again."
           : "Could not sign in. Check your connection and try again."
       );
     } finally {

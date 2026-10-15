@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,7 @@ import (
 )
 
 func NewRouter(
+	ctx context.Context,
 	cfg *config.Config,
 	auth *service.AuthService,
 	servers *service.ServerService,
@@ -35,21 +37,28 @@ func NewRouter(
 	ingestHandler := handlers.NewIngestHandler(servers, col, hb)
 	wsHandler := handlers.NewWSHandler(auth, servers, hb, cfg.AllowedOrigin)
 
+	ip := middleware.ClientIP(cfg.TrustProxy)
+	apiLimit := middleware.NewLimiter(ctx, 20, 60, ip)                       // everything under /api
+	authLimit := middleware.NewLimiter(ctx, 10.0/60, 5, ip)                  // login and register: 10 a minute
+	agentLimit := middleware.NewLimiter(ctx, 5, 10, middleware.AgentKey(ip)) // per agent
+
 	// Live stream for the browser. It checks the token itself (from ?token=).
 	r.Get("/ws", wsHandler.Serve)
 
 	r.Route("/api", func(r chi.Router) {
+		r.Use(apiLimit.Middleware)
+
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		})
 
-		// Public
-		r.Post("/auth/register", authHandler.Register)
-		r.Post("/auth/login", authHandler.Login)
+		// Public, with the strict limit
+		r.With(authLimit.Middleware).Post("/auth/register", authHandler.Register)
+		r.With(authLimit.Middleware).Post("/auth/login", authHandler.Login)
 
 		// Agents send metrics here, using their agent key instead of a user token
-		r.Post("/agent/metrics", ingestHandler.Ingest)
+		r.With(agentLimit.Middleware).Post("/agent/metrics", ingestHandler.Ingest)
 
 		// Needs a valid user token
 		r.Group(func(r chi.Router) {
