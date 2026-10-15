@@ -24,6 +24,13 @@ export default function Alerts() {
   const [editing, setEditing] = useState<AlertRule | null>(null);
 
   useEffect(() => {
+      // Refresh the history every 10 seconds so new alerts appear on their own
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      alertService.history().then(setHistory).catch(() => {});
+    }, 10000);
+    return () => window.clearInterval(id);
+  }, []);
     Promise.all([alertService.listRules(), alertService.history(), serverService.list()])
       .then(([r, h, s]) => {
         setRules(r);
